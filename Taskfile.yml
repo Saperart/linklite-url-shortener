@@ -1,43 +1,47 @@
 version: "3"
 
-dotenv: [".env"]
+dotenv: [".env.example", ".env"]
+
+vars:
+  COMPOSE_ENV_FILE:
+    sh: 'if [ -f .env ]; then echo .env; elif [ -f .env.example ]; then echo .env.example; fi'
 
 tasks:
   run:memory:
     desc: Run full stack in Docker with in-memory storage
     silent: true
     cmds:
-      - docker compose down --remove-orphans
-      - docker compose up --build -d backend-memory frontend-memory
+      - docker compose --env-file "{{.COMPOSE_ENV_FILE}}" down --remove-orphans
+      - docker compose --env-file "{{.COMPOSE_ENV_FILE}}" up --build -d backend-memory frontend-memory
       - task links
 
   run:postgres:
     desc: Run full stack in Docker with PostgreSQL storage
     silent: true
     cmds:
-      - docker compose down --remove-orphans
-      - docker compose up --build -d postgres migrate backend-postgres frontend
+      - docker compose --env-file "{{.COMPOSE_ENV_FILE}}" down --remove-orphans
+      - docker compose --env-file "{{.COMPOSE_ENV_FILE}}" up --build -d postgres migrate backend-postgres frontend
       - task links
 
   down:
     desc: Stop containers
     cmds:
-      - docker compose down --remove-orphans
+      - docker compose --env-file "{{.COMPOSE_ENV_FILE}}" down --remove-orphans
 
   down:volumes:
     desc: Stop containers and remove database volume
     cmds:
-      - docker compose down -v --remove-orphans
+      - docker compose --env-file "{{.COMPOSE_ENV_FILE}}" down -v --remove-orphans
 
   logs:
     desc: Tail all logs
     cmds:
-      - docker compose logs -f --tail=200
+      - docker compose --env-file "{{.COMPOSE_ENV_FILE}}" logs -f --tail=200
 
   ps:
     desc: Show containers
     cmds:
-      - docker compose ps
+      - docker compose --env-file "{{.COMPOSE_ENV_FILE}}" ps
 
   links:
     desc: Print local URLs
