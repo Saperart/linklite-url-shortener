@@ -75,7 +75,7 @@
 
   <rect class="box" x="1432" y="401" width="170" height="58"/>
   <text class="text" x="1517" y="429" text-anchor="middle">Migrations</text>
-  <text class="small" x="1517" y="445" text-anchor="middle">Dockerfile.migrate</text>
+  <text class="small" x="1517" y="445" text-anchor="middle">migrate.Dockerfile</text>
 
   <path class="db" d="M1651 343 C1651 324 1734 324 1734 343 L1734 397 C1734 416 1651 416 1651 397 Z"/>
   <ellipse class="db" cx="1692.5" cy="343" rx="41.5" ry="13"/>

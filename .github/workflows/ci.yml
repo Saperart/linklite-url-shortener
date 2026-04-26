@@ -99,7 +99,7 @@ jobs:
         run: docker build -t url-shortener:ci .
 
       - name: Build migration image
-        run: docker build -f Dockerfile.migrate -t url-shortener-migrate:ci .
+        run: docker build -f migrate.Dockerfile -t url-shortener-migrate:ci .
 
       - name: Build frontend image
         run: docker build -t url-shortener-frontend:ci ./frontend

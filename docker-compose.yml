@@ -19,7 +19,7 @@ services:
   migrate:
     build:
       context: .
-      dockerfile: Dockerfile.migrate
+      dockerfile: migrate.Dockerfile
     container_name: shortener-migrate
     depends_on:
       postgres:
