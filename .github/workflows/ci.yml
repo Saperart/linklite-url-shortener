@@ -1,0 +1,105 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  go:
+    name: Go checks
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_DB: shortener
+          POSTGRES_USER: shortener
+          POSTGRES_PASSWORD: shortener
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U shortener -d shortener"
+          --health-interval 3s
+          --health-timeout 3s
+          --health-retries 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Download modules
+        run: go mod download
+
+      - name: Verify go.mod and go.sum
+        run: go mod tidy && git diff --exit-code go.mod go.sum
+
+      - name: Unit tests
+        run: go test ./...
+
+      - name: Race tests
+        run: go test -race ./...
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Apply migrations
+        run: |
+          go install github.com/pressly/goose/v3/cmd/goose@latest
+          goose -dir migrations postgres "$TEST_DATABASE_DSN" up
+        env:
+          TEST_DATABASE_DSN: postgres://shortener:shortener@localhost:5432/shortener?sslmode=disable
+
+      - name: Integration tests
+        run: go test -tags=integration -v ./internal/repository/postgres
+        env:
+          TEST_DATABASE_DSN: postgres://shortener:shortener@localhost:5432/shortener?sslmode=disable
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: latest
+          args: --timeout=5m
+
+  docker:
+    name: Docker checks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Compose config
+        run: docker compose config
+        env:
+          APP_ENV: local
+          HTTP_ADDR: :8080
+          HTTP_PORT: 8080
+          BASE_URL: http://localhost:8080
+          POSTGRES_DB: shortener
+          POSTGRES_USER: shortener
+          POSTGRES_PASSWORD: shortener
+          POSTGRES_PORT: 5432
+          DATABASE_DSN: postgres://shortener:shortener@postgres:5432/shortener?sslmode=disable
+          LOCAL_DATABASE_DSN: postgres://shortener:shortener@localhost:5432/shortener?sslmode=disable
+          SHUTDOWN_TIMEOUT: 10s
+          HTTP_READ_HEADER_TIMEOUT: 5s
+          HTTP_READ_TIMEOUT: 10s
+          HTTP_WRITE_TIMEOUT: 10s
+          HTTP_IDLE_TIMEOUT: 60s
+          POSTGRES_CONNECT_TIMEOUT: 5s
+
+      - name: Build backend image
+        run: docker build -t url-shortener:ci .
+
+      - name: Build migration image
+        run: docker build -f Dockerfile.migrate -t url-shortener-migrate:ci .
+
+      - name: Build frontend image
+        run: docker build -t url-shortener-frontend:ci ./frontend

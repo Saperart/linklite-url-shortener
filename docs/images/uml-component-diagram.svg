@@ -1,0 +1,103 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1792" height="526" viewBox="0 0 1792 526" role="img" aria-labelledby="title desc">
+  <title id="title">LinkLite URL Shortener UML Component Diagram</title>
+  <desc id="desc">Dark UML component diagram generated from the project architecture scheme.</desc>
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto" markerUnits="strokeWidth">
+      <path d="M1,1 L9,5 L1,9 Z" fill="#d4d4d4"/>
+    </marker>
+    <marker id="softArrow" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto" markerUnits="strokeWidth">
+      <path d="M1,1 L9,5 L1,9 Z" fill="#bdbdbd"/>
+    </marker>
+    <style>
+      .bg { fill: #1b1b1b; }
+      .panel { fill: #212121; stroke: #303030; stroke-width: 1.4; }
+      .box { fill: #343434; stroke: #3f3f3f; stroke-width: 1.2; }
+      .db { fill: #343434; stroke: #3f3f3f; stroke-width: 1.2; }
+      .text { fill: #f4f4f5; font: 700 14px Arial, sans-serif; }
+      .small { fill: #f4f4f5; font: 700 13px Arial, sans-serif; }
+      .label { fill: #f4f4f5; font: 700 14px Arial, sans-serif; }
+      .arrow { stroke: #d4d4d4; stroke-width: 1.1; fill: none; marker-end: url(#arrow); }
+      .curve { stroke: #d4d4d4; stroke-width: 1.1; fill: none; marker-end: url(#arrow); }
+      .dash { stroke: #bdbdbd; stroke-width: 1.1; stroke-dasharray: 2.5 3.5; fill: none; marker-end: url(#softArrow); }
+    </style>
+  </defs>
+
+  <rect class="bg" width="1792" height="526" rx="18"/>
+
+  <rect class="box" x="67" y="33" width="143" height="43"/>
+  <text class="text" x="138.5" y="59" text-anchor="middle">User / Browser</text>
+
+  <rect class="box" x="253" y="26" width="194" height="57"/>
+  <text class="text" x="350" y="52" text-anchor="middle">Frontend</text>
+  <text class="small" x="350" y="69" text-anchor="middle">passes requests to API</text>
+
+  <rect class="panel" x="45" y="113" width="1152" height="263"/>
+  <text class="text" x="621" y="127" text-anchor="middle">Go Backend</text>
+
+  <rect class="box" x="67" y="280" width="143" height="59"/>
+  <text class="text" x="138.5" y="309" text-anchor="middle">cmd/shortener</text>
+  <text class="small" x="138.5" y="323" text-anchor="middle">entrypoint</text>
+
+  <rect class="box" x="266" y="280" width="168" height="59"/>
+  <text class="text" x="350" y="309" text-anchor="middle">internal/app</text>
+  <text class="small" x="350" y="323" text-anchor="middle">bootstrap + server</text>
+
+  <rect class="box" x="565" y="186" width="149" height="88"/>
+  <text class="text" x="639.5" y="216" text-anchor="middle">controller/http</text>
+  <text class="small" x="639.5" y="230" text-anchor="middle">request parsing</text>
+  <text class="small" x="639.5" y="244" text-anchor="middle">response DTO</text>
+  <text class="small" x="639.5" y="258" text-anchor="middle">redirect</text>
+
+  <rect class="box" x="757" y="186" width="181" height="88"/>
+  <text class="text" x="847.5" y="214" text-anchor="middle">usecase/link_service</text>
+  <text class="small" x="847.5" y="230" text-anchor="middle">create link</text>
+  <text class="small" x="847.5" y="244" text-anchor="middle">resolve link</text>
+  <text class="small" x="847.5" y="258" text-anchor="middle">collision retry</text>
+
+  <rect class="box" x="981" y="151" width="194" height="58"/>
+  <text class="text" x="1078" y="179" text-anchor="middle">generator</text>
+  <text class="small" x="1078" y="194" text-anchor="middle">crypto/rand short code</text>
+
+  <rect class="box" x="1006" y="251" width="144" height="58"/>
+  <text class="text" x="1078" y="279" text-anchor="middle">LinkRepository</text>
+  <text class="small" x="1078" y="294" text-anchor="middle">interface</text>
+
+  <rect class="panel" x="1410" y="170" width="346" height="323"/>
+  <text class="text" x="1583" y="185" text-anchor="middle">Storage</text>
+
+  <rect class="box" x="1432" y="201" width="171" height="58"/>
+  <text class="text" x="1517.5" y="228" text-anchor="middle">repository/memory</text>
+  <text class="small" x="1517.5" y="244" text-anchor="middle">map + RWMutex</text>
+
+  <rect class="box" x="1431" y="301" width="173" height="58"/>
+  <text class="text" x="1517.5" y="328" text-anchor="middle">repository/postgres</text>
+  <text class="small" x="1517.5" y="344" text-anchor="middle">pgxpool + sqlc</text>
+
+  <rect class="box" x="1432" y="401" width="170" height="58"/>
+  <text class="text" x="1517" y="429" text-anchor="middle">Migrations</text>
+  <text class="small" x="1517" y="445" text-anchor="middle">Dockerfile.migrate</text>
+
+  <path class="db" d="M1651 343 C1651 324 1734 324 1734 343 L1734 397 C1734 416 1651 416 1651 397 Z"/>
+  <ellipse class="db" cx="1692.5" cy="343" rx="41.5" ry="13"/>
+  <text class="text" x="1692.5" y="384" text-anchor="middle">PostgreSQL</text>
+  <text class="small" x="1692.5" y="400" text-anchor="middle">links table</text>
+
+  <path class="arrow" d="M210 54 L253 54"/>
+  <path class="arrow" d="M391 83 C440 120 504 162 565 193"/>
+  <text class="label" x="469" y="146" text-anchor="middle">HTTP /api/*</text>
+
+  <path class="arrow" d="M210 309 L266 309"/>
+  <path class="curve" d="M434 310 C490 310 515 284 565 273"/>
+  <path class="arrow" d="M714 230 L757 230"/>
+  <path class="arrow" d="M938 214 L981 193"/>
+  <path class="curve" d="M938 267 C958 279 975 281 1006 281"/>
+
+  <path class="dash" d="M1150 251 C1245 215 1327 230 1432 230"/>
+  <text class="label" x="1302" y="234" text-anchor="middle">STORAGE_TYPE=memory</text>
+
+  <path class="dash" d="M1150 309 C1247 342 1326 332 1431 330"/>
+  <text class="label" x="1302" y="333" text-anchor="middle">STORAGE_TYPE=postgres</text>
+
+  <path class="curve" d="M1604 330 C1623 333 1636 343 1651 354"/>
+  <path class="curve" d="M1602 430 C1626 428 1639 410 1651 399"/>
+</svg>
