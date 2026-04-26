@@ -4,6 +4,7 @@ run:
   timeout: 5m
 
 linters:
+  default: none
   enable:
     - errcheck
     - govet
@@ -12,11 +13,8 @@ linters:
     - unused
     - revive
 
-linters-settings:
-  revive:
-    rules:
-      - name: exported
-        disabled: true
-
-issues:
-  exclude-use-default: false
+  settings:
+    revive:
+      rules:
+        - name: exported
+          disabled: true
