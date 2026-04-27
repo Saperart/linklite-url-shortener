@@ -58,18 +58,6 @@ tasks:
     cmds:
       - npm install
 
-  frontend:dev:
-    desc: Run frontend dev server with Vite proxy
-    dir: ./frontend
-    cmds:
-      - VITE_PROXY_TARGET=http://localhost:${HTTP_PORT} npm run dev
-
-  frontend:build:
-    desc: Build frontend
-    dir: ./frontend
-    cmds:
-      - npm run build
-
   sqlc:
     desc: Generate sqlc code
     cmds:

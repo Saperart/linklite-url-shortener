@@ -193,7 +193,7 @@ migrations/                    SQL migrations для goose
 
 ## Frontend
 
-Frontend находится в папке `frontend/` и сделан на **React + Vite + TypeScript**. Он нужен как бонус к заданию: можно ввести original URL, получить short URL, скопировать его или открыть в новой вкладке.
+Frontend находится в папке `frontend/`. Он нужен как бонус к заданию: можно ввести original URL, получить short URL, скопировать его или открыть в новой вкладке.
 
 > Пакет `frontend` был сделан с помощью **ChatGPT 5.5** и не является основной частью backend-задания.
 
