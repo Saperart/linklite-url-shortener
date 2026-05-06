@@ -7,6 +7,10 @@ import (
 
 	"github.com/Saperart/linklite-url-shortener/internal/entity"
 	xerrors "github.com/Saperart/linklite-url-shortener/internal/errors"
+	"github.com/Saperart/linklite-url-shortener/internal/usecase/link_service/mocks"
+	"github.com/golang/mock/gomock"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 const (
@@ -15,118 +19,43 @@ const (
 	secondShortCode  = "Xyz987_QWE"
 )
 
-type testRepository struct {
-	byOriginalURL map[string]*entity.Link
-	byShortCode   map[string]*entity.Link
-
-	getByOriginalURLError error
-	getByShortCodeError   error
-	saveError             error
-}
-
-func newTestRepository() *testRepository {
-	return &testRepository{
-		byOriginalURL: make(map[string]*entity.Link),
-		byShortCode:   make(map[string]*entity.Link),
-	}
-}
-
-func (r *testRepository) GetByOriginalURL(_ context.Context, originalURL string) (*entity.Link, error) {
-	if r.getByOriginalURLError != nil {
-		return nil, r.getByOriginalURLError
-	}
-
-	link, ok := r.byOriginalURL[originalURL]
-	if !ok {
-		return nil, xerrors.ErrNotFound
-	}
-
-	return link, nil
-}
-
-func (r *testRepository) GetByShortCode(_ context.Context, shortCode string) (*entity.Link, error) {
-	if r.getByShortCodeError != nil {
-		return nil, r.getByShortCodeError
-	}
-
-	link, ok := r.byShortCode[shortCode]
-	if !ok {
-		return nil, xerrors.ErrNotFound
-	}
-
-	return link, nil
-}
-
-func (r *testRepository) Save(_ context.Context, link *entity.Link) (*entity.Link, error) {
-	if r.saveError != nil {
-		return nil, r.saveError
-	}
-
-	if _, ok := r.byOriginalURL[link.OriginalURL]; ok {
-		return nil, xerrors.ErrOriginalURLAlreadyExists
-	}
-
-	if _, ok := r.byShortCode[link.ShortCode]; ok {
-		return nil, xerrors.ErrShortCodeAlreadyExists
-	}
-
-	r.byOriginalURL[link.OriginalURL] = link
-	r.byShortCode[link.ShortCode] = link
-
-	return link, nil
-}
-
-type testGenerator struct {
-	codes []string
-	err   error
-	calls int
-}
-
-func (g *testGenerator) Generate() (string, error) {
-	g.calls++
-
-	if g.err != nil {
-		return "", g.err
-	}
-
-	if len(g.codes) == 0 {
-		return validShortCode, nil
-	}
-
-	code := g.codes[0]
-	if len(g.codes) > 1 {
-		g.codes = g.codes[1:]
-	}
-
-	return code, nil
-}
+var errRandomSourceFailed = errors.New("random source failed")
 
 func TestLinkServiceCreateLink(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name      string
-		url       string
-		prepare   func(repo *testRepository, generator *testGenerator)
-		wantCode  string
-		wantErr   error
-		wantCalls int
+		name    string
+		url     string
+		prepare func(repo *mocks.MockLinkRepository, generator *mocks.MockCodeGenerator)
+		want    string
+		wantErr error
 	}{
 		{
-			name:     "create new link",
-			url:      validOriginalURL,
-			wantCode: validShortCode,
+			name: "create new link",
+			url:  validOriginalURL,
+			prepare: func(repo *mocks.MockLinkRepository, generator *mocks.MockCodeGenerator) {
+				repo.EXPECT().
+					GetByOriginalURL(gomock.Any(), validOriginalURL).
+					Return(nil, xerrors.ErrNotFound)
+				generator.EXPECT().Generate().Return(validShortCode, nil)
+				repo.EXPECT().
+					Save(gomock.Any(), gomock.AssignableToTypeOf(&entity.Link{})).
+					DoAndReturn(func(_ context.Context, link *entity.Link) (*entity.Link, error) {
+						return link, nil
+					})
+			},
+			want: validShortCode,
 		},
 		{
 			name: "return existing link for same original url",
 			url:  validOriginalURL,
-			prepare: func(repo *testRepository, _ *testGenerator) {
-				link := entity.NewLink(validOriginalURL, secondShortCode)
-				repo.byOriginalURL[link.OriginalURL] = link
-				repo.byShortCode[link.ShortCode] = link
+			prepare: func(repo *mocks.MockLinkRepository, _ *mocks.MockCodeGenerator) {
+				repo.EXPECT().
+					GetByOriginalURL(gomock.Any(), validOriginalURL).
+					Return(entity.NewLink(validOriginalURL, secondShortCode), nil)
 			},
-			wantCode:  secondShortCode,
-			wantCalls: 0,
+			want: secondShortCode,
 		},
 		{
 			name:    "invalid url without scheme",
@@ -136,63 +65,97 @@ func TestLinkServiceCreateLink(t *testing.T) {
 		{
 			name: "repository get error",
 			url:  validOriginalURL,
-			prepare: func(repo *testRepository, _ *testGenerator) {
-				repo.getByOriginalURLError = xerrors.ErrStorageUnavailable
+			prepare: func(repo *mocks.MockLinkRepository, _ *mocks.MockCodeGenerator) {
+				repo.EXPECT().
+					GetByOriginalURL(gomock.Any(), validOriginalURL).
+					Return(nil, xerrors.ErrStorageUnavailable)
 			},
 			wantErr: xerrors.ErrStorageUnavailable,
 		},
 		{
 			name: "retry after short code collision",
 			url:  validOriginalURL,
-			prepare: func(repo *testRepository, generator *testGenerator) {
-				existing := entity.NewLink("https://other.com", validShortCode)
-				repo.byOriginalURL[existing.OriginalURL] = existing
-				repo.byShortCode[existing.ShortCode] = existing
-
-				generator.codes = []string{validShortCode, secondShortCode}
+			prepare: func(repo *mocks.MockLinkRepository, generator *mocks.MockCodeGenerator) {
+				repo.EXPECT().
+					GetByOriginalURL(gomock.Any(), validOriginalURL).
+					Return(nil, xerrors.ErrNotFound)
+				generator.EXPECT().Generate().Return(validShortCode, nil)
+				repo.EXPECT().
+					Save(gomock.Any(), gomock.AssignableToTypeOf(&entity.Link{})).
+					Return(nil, xerrors.ErrShortCodeAlreadyExists)
+				generator.EXPECT().Generate().Return(secondShortCode, nil)
+				repo.EXPECT().
+					Save(gomock.Any(), gomock.AssignableToTypeOf(&entity.Link{})).
+					DoAndReturn(func(_ context.Context, link *entity.Link) (*entity.Link, error) {
+						return link, nil
+					})
 			},
-			wantCode:  secondShortCode,
-			wantCalls: 2,
+			want: secondShortCode,
 		},
 		{
 			name: "max retries exceeded",
 			url:  validOriginalURL,
-			prepare: func(repo *testRepository, generator *testGenerator) {
-				existing := entity.NewLink("https://other.com", validShortCode)
-				repo.byOriginalURL[existing.OriginalURL] = existing
-				repo.byShortCode[existing.ShortCode] = existing
-
-				generator.codes = []string{validShortCode}
+			prepare: func(repo *mocks.MockLinkRepository, generator *mocks.MockCodeGenerator) {
+				repo.EXPECT().
+					GetByOriginalURL(gomock.Any(), validOriginalURL).
+					Return(nil, xerrors.ErrNotFound)
+				generator.EXPECT().
+					Generate().
+					Return(validShortCode, nil).
+					Times(maxGenerateCodeAttempts)
+				repo.EXPECT().
+					Save(gomock.Any(), gomock.AssignableToTypeOf(&entity.Link{})).
+					Return(nil, xerrors.ErrShortCodeAlreadyExists).
+					Times(maxGenerateCodeAttempts)
 			},
-			wantErr:   xerrors.ErrMaxRetriesExceeded,
-			wantCalls: maxGenerateCodeAttempts,
+			wantErr: xerrors.ErrMaxRetriesExceeded,
 		},
 		{
 			name: "generator produced invalid short code",
 			url:  validOriginalURL,
-			prepare: func(_ *testRepository, generator *testGenerator) {
-				generator.codes = []string{"bad"}
+			prepare: func(repo *mocks.MockLinkRepository, generator *mocks.MockCodeGenerator) {
+				repo.EXPECT().
+					GetByOriginalURL(gomock.Any(), validOriginalURL).
+					Return(nil, xerrors.ErrNotFound)
+				generator.EXPECT().Generate().Return("bad", nil)
 			},
 			wantErr: xerrors.ErrInvalidShortCode,
 		},
 		{
 			name: "save storage error",
 			url:  validOriginalURL,
-			prepare: func(repo *testRepository, _ *testGenerator) {
-				repo.saveError = xerrors.ErrStorageUnavailable
+			prepare: func(repo *mocks.MockLinkRepository, generator *mocks.MockCodeGenerator) {
+				repo.EXPECT().
+					GetByOriginalURL(gomock.Any(), validOriginalURL).
+					Return(nil, xerrors.ErrNotFound)
+				generator.EXPECT().Generate().Return(validShortCode, nil)
+				repo.EXPECT().
+					Save(gomock.Any(), gomock.AssignableToTypeOf(&entity.Link{})).
+					Return(nil, xerrors.ErrStorageUnavailable)
 			},
 			wantErr: xerrors.ErrStorageUnavailable,
+		},
+		{
+			name: "generator error",
+			url:  validOriginalURL,
+			prepare: func(repo *mocks.MockLinkRepository, generator *mocks.MockCodeGenerator) {
+				repo.EXPECT().
+					GetByOriginalURL(gomock.Any(), validOriginalURL).
+					Return(nil, xerrors.ErrNotFound)
+				generator.EXPECT().Generate().Return("", errRandomSourceFailed)
+			},
+			wantErr: errRandomSourceFailed,
 		},
 	}
 
 	for _, tc := range tests {
 		tc := tc
-
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			repo := newTestRepository()
-			generator := &testGenerator{codes: []string{validShortCode}}
+			ctrl := gomock.NewController(t)
+			repo := mocks.NewMockLinkRepository(ctrl)
+			generator := mocks.NewMockCodeGenerator(ctrl)
 
 			if tc.prepare != nil {
 				tc.prepare(repo, generator)
@@ -201,33 +164,15 @@ func TestLinkServiceCreateLink(t *testing.T) {
 			service := NewLinkService(repo, generator)
 
 			code, err := service.CreateLink(context.Background(), tc.url)
-
 			if tc.wantErr != nil {
-				if !errors.Is(err, tc.wantErr) {
-					t.Fatalf("expected error %v, got %v", tc.wantErr, err)
-				}
-				if code != "" {
-					t.Fatalf("expected empty code, got %q", code)
-				}
-
-				if tc.wantCalls != 0 && generator.calls != tc.wantCalls {
-					t.Fatalf("expected generator calls %d, got %d", tc.wantCalls, generator.calls)
-				}
-
+				require.Error(t, err)
+				assert.ErrorIs(t, err, tc.wantErr)
+				assert.Empty(t, code)
 				return
 			}
 
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-
-			if code != tc.wantCode {
-				t.Fatalf("expected code %q, got %q", tc.wantCode, code)
-			}
-
-			if tc.wantCalls != 0 && generator.calls != tc.wantCalls {
-				t.Fatalf("expected generator calls %d, got %d", tc.wantCalls, generator.calls)
-			}
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, code)
 		})
 	}
 }
@@ -238,17 +183,17 @@ func TestLinkServiceResolveLink(t *testing.T) {
 	tests := []struct {
 		name      string
 		shortCode string
-		prepare   func(repo *testRepository)
+		prepare   func(repo *mocks.MockLinkRepository)
 		wantURL   string
 		wantErr   error
 	}{
 		{
 			name:      "success",
 			shortCode: validShortCode,
-			prepare: func(repo *testRepository) {
-				link := entity.NewLink(validOriginalURL, validShortCode)
-				repo.byOriginalURL[link.OriginalURL] = link
-				repo.byShortCode[link.ShortCode] = link
+			prepare: func(repo *mocks.MockLinkRepository) {
+				repo.EXPECT().
+					GetByShortCode(gomock.Any(), validShortCode).
+					Return(entity.NewLink(validOriginalURL, validShortCode), nil)
 			},
 			wantURL: validOriginalURL,
 		},
@@ -265,13 +210,20 @@ func TestLinkServiceResolveLink(t *testing.T) {
 		{
 			name:      "not found",
 			shortCode: validShortCode,
-			wantErr:   xerrors.ErrNotFound,
+			prepare: func(repo *mocks.MockLinkRepository) {
+				repo.EXPECT().
+					GetByShortCode(gomock.Any(), validShortCode).
+					Return(nil, xerrors.ErrNotFound)
+			},
+			wantErr: xerrors.ErrNotFound,
 		},
 		{
 			name:      "repository error",
 			shortCode: validShortCode,
-			prepare: func(repo *testRepository) {
-				repo.getByShortCodeError = xerrors.ErrStorageUnavailable
+			prepare: func(repo *mocks.MockLinkRepository) {
+				repo.EXPECT().
+					GetByShortCode(gomock.Any(), validShortCode).
+					Return(nil, xerrors.ErrStorageUnavailable)
 			},
 			wantErr: xerrors.ErrStorageUnavailable,
 		},
@@ -279,11 +231,11 @@ func TestLinkServiceResolveLink(t *testing.T) {
 
 	for _, tc := range tests {
 		tc := tc
-
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			repo := newTestRepository()
-			generator := &testGenerator{codes: []string{validShortCode}}
+			ctrl := gomock.NewController(t)
+			repo := mocks.NewMockLinkRepository(ctrl)
+			generator := mocks.NewMockCodeGenerator(ctrl)
 			if tc.prepare != nil {
 				tc.prepare(repo)
 			}
@@ -291,20 +243,14 @@ func TestLinkServiceResolveLink(t *testing.T) {
 			service := NewLinkService(repo, generator)
 			originalURL, err := service.ResolveLink(context.Background(), tc.shortCode)
 			if tc.wantErr != nil {
-				if !errors.Is(err, tc.wantErr) {
-					t.Fatalf("expected error %v, got %v", tc.wantErr, err)
-				}
-				if originalURL != "" {
-					t.Fatalf("expected empty original url, got %q", originalURL)
-				}
+				require.Error(t, err)
+				assert.ErrorIs(t, err, tc.wantErr)
+				assert.Empty(t, originalURL)
 				return
 			}
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-			if originalURL != tc.wantURL {
-				t.Fatalf("expected original url %q, got %q", tc.wantURL, originalURL)
-			}
+
+			require.NoError(t, err)
+			assert.Equal(t, tc.wantURL, originalURL)
 		})
 	}
 }
@@ -353,14 +299,11 @@ func TestValidateOriginalURL(t *testing.T) {
 			t.Parallel()
 			err := validateOriginalURL(tc.rawURL)
 			if tc.wantErr != nil {
-				if !errors.Is(err, tc.wantErr) {
-					t.Fatalf("expected error %v, got %v", tc.wantErr, err)
-				}
+				require.Error(t, err)
+				assert.ErrorIs(t, err, tc.wantErr)
 				return
 			}
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
+			require.NoError(t, err)
 		})
 	}
 }
@@ -405,33 +348,11 @@ func TestValidateShortCode(t *testing.T) {
 			t.Parallel()
 			err := validateShortCode(tc.shortCode)
 			if tc.wantErr != nil {
-				if !errors.Is(err, tc.wantErr) {
-					t.Fatalf("expected error %v, got %v", tc.wantErr, err)
-				}
+				require.Error(t, err)
+				assert.ErrorIs(t, err, tc.wantErr)
 				return
 			}
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
+			require.NoError(t, err)
 		})
-	}
-}
-
-func TestLinkServiceCreateLinkGeneratorError(t *testing.T) {
-	t.Parallel()
-
-	repo := newTestRepository()
-	generatorErr := errors.New("random source failed")
-	generator := &testGenerator{err: generatorErr}
-	service := NewLinkService(repo, generator)
-
-	code, err := service.CreateLink(context.Background(), validOriginalURL)
-
-	if !errors.Is(err, generatorErr) {
-		t.Fatalf("expected generator error %v, got %v", generatorErr, err)
-	}
-
-	if code != "" {
-		t.Fatalf("expected empty code, got %q", code)
 	}
 }

@@ -1,10 +1,11 @@
 package generator
 
 import (
-	"errors"
 	"testing"
 
 	xerrors "github.com/Saperart/linklite-url-shortener/internal/errors"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 const (
@@ -59,20 +60,13 @@ func TestNewRandomCodeGenerator(t *testing.T) {
 			t.Parallel()
 			g, err := NewRandomCodeGenerator(tc.length, tc.alphabet)
 			if tc.wantErr != nil {
-				if !errors.Is(err, tc.wantErr) {
-					t.Fatalf("expected error %v, got %v", tc.wantErr, err)
-				}
-				if g != nil {
-					t.Fatalf("expected nil generator, got %#v", g)
-				}
+				require.Error(t, err)
+				assert.ErrorIs(t, err, tc.wantErr)
+				assert.Nil(t, g)
 				return
 			}
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-			if g == nil {
-				t.Fatal("expected generator, got nil")
-			}
+			require.NoError(t, err)
+			require.NotNil(t, g)
 		})
 	}
 }
@@ -109,23 +103,15 @@ func TestRandomCodeGeneratorGenerate(t *testing.T) {
 			t.Parallel()
 
 			g, err := NewRandomCodeGenerator(tc.length, tc.alphabet)
-			if err != nil {
-				t.Fatalf("unexpected constructor error: %v", err)
-			}
+			require.NoError(t, err)
 
 			code, err := g.Generate()
-			if err != nil {
-				t.Fatalf("unexpected generate error: %v", err)
-			}
+			require.NoError(t, err)
 
-			if len(code) != tc.length {
-				t.Fatalf("expected code length %d, got %d", tc.length, len(code))
-			}
+			require.Len(t, code, tc.length)
 
 			for _, symbol := range code {
-				if !containsRune(tc.alphabet, symbol) {
-					t.Fatalf("generated code %q contains unexpected symbol %q", code, symbol)
-				}
+				assert.Truef(t, containsRune(tc.alphabet, symbol), "generated code %q contains unexpected symbol %q", code, symbol)
 			}
 		})
 	}
@@ -134,21 +120,13 @@ func TestRandomCodeGeneratorGenerate(t *testing.T) {
 func TestRandomCodeGeneratorGenerateSeveralCodes(t *testing.T) {
 	t.Parallel()
 	g, err := NewRandomCodeGenerator(testCodeLength, testCodeAlphabet)
-	if err != nil {
-		t.Fatalf("unexpected constructor error: %v", err)
-	}
+	require.NoError(t, err)
 	for i := 0; i < 100; i++ {
 		code, err := g.Generate()
-		if err != nil {
-			t.Fatalf("unexpected generate error: %v", err)
-		}
-		if len(code) != testCodeLength {
-			t.Fatalf("expected code length %d, got %d", testCodeLength, len(code))
-		}
+		require.NoError(t, err)
+		require.Len(t, code, testCodeLength)
 		for _, symbol := range code {
-			if !containsRune(testCodeAlphabet, symbol) {
-				t.Fatalf("generated code %q contains unexpected symbol %q", code, symbol)
-			}
+			assert.Truef(t, containsRune(testCodeAlphabet, symbol), "generated code %q contains unexpected symbol %q", code, symbol)
 		}
 	}
 }

@@ -15,6 +15,8 @@ import (
 	"github.com/Saperart/linklite-url-shortener/internal/entity"
 	xerrors "github.com/Saperart/linklite-url-shortener/internal/errors"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 const (
@@ -30,30 +32,14 @@ func TestRepositoryIntegrationSaveAndGetByOriginalURL(t *testing.T) {
 	originalURL, shortCode := newTestLinkData(t)
 
 	saved, err := repo.Save(context.Background(), entity.NewLink(originalURL, shortCode))
-	if err != nil {
-		t.Fatalf("save link: %v", err)
-	}
-
-	if saved.OriginalURL != originalURL {
-		t.Fatalf("expected original url %q, got %q", originalURL, saved.OriginalURL)
-	}
-
-	if saved.ShortCode != shortCode {
-		t.Fatalf("expected short code %q, got %q", shortCode, saved.ShortCode)
-	}
+	require.NoError(t, err)
+	assert.Equal(t, originalURL, saved.OriginalURL)
+	assert.Equal(t, shortCode, saved.ShortCode)
 
 	found, err := repo.GetByOriginalURL(context.Background(), originalURL)
-	if err != nil {
-		t.Fatalf("get by original url: %v", err)
-	}
-
-	if found.OriginalURL != originalURL {
-		t.Fatalf("expected original url %q, got %q", originalURL, found.OriginalURL)
-	}
-
-	if found.ShortCode != shortCode {
-		t.Fatalf("expected short code %q, got %q", shortCode, found.ShortCode)
-	}
+	require.NoError(t, err)
+	assert.Equal(t, originalURL, found.OriginalURL)
+	assert.Equal(t, shortCode, found.ShortCode)
 }
 
 func TestRepositoryIntegrationSaveAndGetByShortCode(t *testing.T) {
@@ -63,22 +49,12 @@ func TestRepositoryIntegrationSaveAndGetByShortCode(t *testing.T) {
 	originalURL, shortCode := newTestLinkData(t)
 
 	_, err := repo.Save(context.Background(), entity.NewLink(originalURL, shortCode))
-	if err != nil {
-		t.Fatalf("save link: %v", err)
-	}
+	require.NoError(t, err)
 
 	found, err := repo.GetByShortCode(context.Background(), shortCode)
-	if err != nil {
-		t.Fatalf("get by short code: %v", err)
-	}
-
-	if found.OriginalURL != originalURL {
-		t.Fatalf("expected original url %q, got %q", originalURL, found.OriginalURL)
-	}
-
-	if found.ShortCode != shortCode {
-		t.Fatalf("expected short code %q, got %q", shortCode, found.ShortCode)
-	}
+	require.NoError(t, err)
+	assert.Equal(t, originalURL, found.OriginalURL)
+	assert.Equal(t, shortCode, found.ShortCode)
 }
 
 func TestRepositoryIntegrationGetNotFound(t *testing.T) {
@@ -88,17 +64,13 @@ func TestRepositoryIntegrationGetNotFound(t *testing.T) {
 	t.Run("get by original url", func(t *testing.T) {
 		_, err := repo.GetByOriginalURL(context.Background(), testOriginalURLPrefix+"not-found")
 
-		if !errors.Is(err, xerrors.ErrNotFound) {
-			t.Fatalf("expected ErrNotFound, got %v", err)
-		}
+		assert.ErrorIs(t, err, xerrors.ErrNotFound)
 	})
 
 	t.Run("get by short code", func(t *testing.T) {
 		_, err := repo.GetByShortCode(context.Background(), "NotFound1_")
 
-		if !errors.Is(err, xerrors.ErrNotFound) {
-			t.Fatalf("expected ErrNotFound, got %v", err)
-		}
+		assert.ErrorIs(t, err, xerrors.ErrNotFound)
 	})
 }
 
@@ -110,14 +82,10 @@ func TestRepositoryIntegrationSaveDuplicateOriginalURL(t *testing.T) {
 	_, anotherShortCode := newTestLinkData(t)
 
 	_, err := repo.Save(context.Background(), entity.NewLink(originalURL, shortCode))
-	if err != nil {
-		t.Fatalf("save first link: %v", err)
-	}
+	require.NoError(t, err)
 
 	_, err = repo.Save(context.Background(), entity.NewLink(originalURL, anotherShortCode))
-	if !errors.Is(err, xerrors.ErrOriginalURLAlreadyExists) {
-		t.Fatalf("expected ErrOriginalURLAlreadyExists, got %v", err)
-	}
+	assert.ErrorIs(t, err, xerrors.ErrOriginalURLAlreadyExists)
 }
 
 func TestRepositoryIntegrationSaveDuplicateShortCode(t *testing.T) {
@@ -128,14 +96,10 @@ func TestRepositoryIntegrationSaveDuplicateShortCode(t *testing.T) {
 	anotherOriginalURL := testOriginalURLPrefix + "another-" + shortCode
 
 	_, err := repo.Save(context.Background(), entity.NewLink(originalURL, shortCode))
-	if err != nil {
-		t.Fatalf("save first link: %v", err)
-	}
+	require.NoError(t, err)
 
 	_, err = repo.Save(context.Background(), entity.NewLink(anotherOriginalURL, shortCode))
-	if !errors.Is(err, xerrors.ErrShortCodeAlreadyExists) {
-		t.Fatalf("expected ErrShortCodeAlreadyExists, got %v", err)
-	}
+	assert.ErrorIs(t, err, xerrors.ErrShortCodeAlreadyExists)
 }
 
 func newTestPool(t *testing.T) *pgxpool.Pool {

@@ -1,9 +1,11 @@
 package config
 
 import (
-	"strings"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 const (
@@ -135,18 +137,14 @@ func TestLoad(t *testing.T) {
 			cfg, err := Load()
 
 			if tc.wantErr {
-				if err == nil {
-					t.Fatal("expected error, got nil")
-				}
-				if tc.errSubstr != "" && !strings.Contains(err.Error(), tc.errSubstr) {
-					t.Fatalf("expected error to contain %q, got %q", tc.errSubstr, err.Error())
+				require.Error(t, err)
+				if tc.errSubstr != "" {
+					assert.Contains(t, err.Error(), tc.errSubstr)
 				}
 				return
 			}
 
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
+			require.NoError(t, err)
 
 			assertConfigEqual(t, tc.wantCfg, cfg)
 		})
@@ -291,18 +289,14 @@ func TestConfigValidate(t *testing.T) {
 			err := tc.cfg.validate()
 
 			if tc.wantErr {
-				if err == nil {
-					t.Fatal("expected error, got nil")
-				}
-				if tc.errSubstr != "" && !strings.Contains(err.Error(), tc.errSubstr) {
-					t.Fatalf("expected error to contain %q, got %q", tc.errSubstr, err.Error())
+				require.Error(t, err)
+				if tc.errSubstr != "" {
+					assert.Contains(t, err.Error(), tc.errSubstr)
 				}
 				return
 			}
 
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
+			require.NoError(t, err)
 		})
 	}
 }
@@ -349,37 +343,15 @@ func validConfig(storageType string) Config {
 func assertConfigEqual(t *testing.T, want Config, got Config) {
 	t.Helper()
 
-	if got.AppEnv != want.AppEnv {
-		t.Fatalf("expected AppEnv %q, got %q", want.AppEnv, got.AppEnv)
-	}
-	if got.StorageType != want.StorageType {
-		t.Fatalf("expected StorageType %q, got %q", want.StorageType, got.StorageType)
-	}
-	if got.HTTPAddr != want.HTTPAddr {
-		t.Fatalf("expected HTTPAddr %q, got %q", want.HTTPAddr, got.HTTPAddr)
-	}
-	if got.BaseURL != want.BaseURL {
-		t.Fatalf("expected BaseURL %q, got %q", want.BaseURL, got.BaseURL)
-	}
-	if got.DatabaseDSN != want.DatabaseDSN {
-		t.Fatalf("expected DatabaseDSN %q, got %q", want.DatabaseDSN, got.DatabaseDSN)
-	}
-	if got.ShutdownTimeout != want.ShutdownTimeout {
-		t.Fatalf("expected ShutdownTimeout %s, got %s", want.ShutdownTimeout, got.ShutdownTimeout)
-	}
-	if got.ReadHeaderTimeout != want.ReadHeaderTimeout {
-		t.Fatalf("expected ReadHeaderTimeout %s, got %s", want.ReadHeaderTimeout, got.ReadHeaderTimeout)
-	}
-	if got.ReadTimeout != want.ReadTimeout {
-		t.Fatalf("expected ReadTimeout %s, got %s", want.ReadTimeout, got.ReadTimeout)
-	}
-	if got.WriteTimeout != want.WriteTimeout {
-		t.Fatalf("expected WriteTimeout %s, got %s", want.WriteTimeout, got.WriteTimeout)
-	}
-	if got.IdleTimeout != want.IdleTimeout {
-		t.Fatalf("expected IdleTimeout %s, got %s", want.IdleTimeout, got.IdleTimeout)
-	}
-	if got.PostgresConnectTimeout != want.PostgresConnectTimeout {
-		t.Fatalf("expected PostgresConnectTimeout %s, got %s", want.PostgresConnectTimeout, got.PostgresConnectTimeout)
-	}
+	assert.Equal(t, want.AppEnv, got.AppEnv)
+	assert.Equal(t, want.StorageType, got.StorageType)
+	assert.Equal(t, want.HTTPAddr, got.HTTPAddr)
+	assert.Equal(t, want.BaseURL, got.BaseURL)
+	assert.Equal(t, want.DatabaseDSN, got.DatabaseDSN)
+	assert.Equal(t, want.ShutdownTimeout, got.ShutdownTimeout)
+	assert.Equal(t, want.ReadHeaderTimeout, got.ReadHeaderTimeout)
+	assert.Equal(t, want.ReadTimeout, got.ReadTimeout)
+	assert.Equal(t, want.WriteTimeout, got.WriteTimeout)
+	assert.Equal(t, want.IdleTimeout, got.IdleTimeout)
+	assert.Equal(t, want.PostgresConnectTimeout, got.PostgresConnectTimeout)
 }

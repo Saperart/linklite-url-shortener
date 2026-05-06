@@ -2,7 +2,6 @@ package httpcontroller
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -10,7 +9,11 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	mockhttp "github.com/Saperart/linklite-url-shortener/internal/controller/http/mocks"
 	xerrors "github.com/Saperart/linklite-url-shortener/internal/errors"
+	"github.com/golang/mock/gomock"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 )
 
@@ -20,27 +23,6 @@ const (
 	testShortCode   = "Abc123_DEF"
 )
 
-type testLinkService struct {
-	createLinkFunc  func(ctx context.Context, originalURL string) (string, error)
-	resolveLinkFunc func(ctx context.Context, shortCode string) (string, error)
-}
-
-func (s *testLinkService) CreateLink(ctx context.Context, originalURL string) (string, error) {
-	if s.createLinkFunc != nil {
-		return s.createLinkFunc(ctx, originalURL)
-	}
-
-	return testShortCode, nil
-}
-
-func (s *testLinkService) ResolveLink(ctx context.Context, shortCode string) (string, error) {
-	if s.resolveLinkFunc != nil {
-		return s.resolveLinkFunc(ctx, shortCode)
-	}
-
-	return testOriginalURL, nil
-}
-
 func newTestHandler(service linkService) *Handler {
 	return NewHandler(service, zap.NewNop(), testBaseURL)
 }
@@ -49,50 +31,49 @@ func TestHandlerCreateLink(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name           string
-		body           string
-		service        *testLinkService
-		wantStatus     int
-		wantShortURL   string
-		wantErrorCode  string
-		wantServiceURL string
+		name          string
+		body          string
+		prepare       func(mockService *mockhttp.MocklinkService)
+		wantStatus    int
+		wantShortURL  string
+		wantErrorCode string
 	}{
 		{
-			name:           "success",
-			body:           `{"url":"https://example.com"}`,
-			service:        &testLinkService{},
-			wantStatus:     http.StatusOK,
-			wantShortURL:   testBaseURL + "/" + testShortCode,
-			wantServiceURL: testOriginalURL,
+			name: "success",
+			body: `{"url":"https://example.com"}`,
+			prepare: func(mockService *mockhttp.MocklinkService) {
+				mockService.EXPECT().
+					CreateLink(gomock.Any(), testOriginalURL).
+					Return(testShortCode, nil)
+			},
+			wantStatus:   http.StatusOK,
+			wantShortURL: testBaseURL + "/" + testShortCode,
 		},
 		{
 			name:          "invalid json",
 			body:          `{"url":`,
-			service:       &testLinkService{},
 			wantStatus:    http.StatusBadRequest,
 			wantErrorCode: "invalid_json",
 		},
 		{
 			name:          "unknown field",
 			body:          `{"url":"https://example.com","extra":"value"}`,
-			service:       &testLinkService{},
 			wantStatus:    http.StatusBadRequest,
 			wantErrorCode: "invalid_json",
 		},
 		{
 			name:          "several json objects",
 			body:          `{"url":"https://example.com"} {"url":"https://other.com"}`,
-			service:       &testLinkService{},
 			wantStatus:    http.StatusBadRequest,
 			wantErrorCode: "invalid_json",
 		},
 		{
 			name: "service invalid url error",
 			body: `{"url":"bad-url"}`,
-			service: &testLinkService{
-				createLinkFunc: func(_ context.Context, _ string) (string, error) {
-					return "", xerrors.ErrInvalidURL
-				},
+			prepare: func(mockService *mockhttp.MocklinkService) {
+				mockService.EXPECT().
+					CreateLink(gomock.Any(), "bad-url").
+					Return("", xerrors.ErrInvalidURL)
 			},
 			wantStatus:    http.StatusBadRequest,
 			wantErrorCode: "invalid_url",
@@ -100,10 +81,10 @@ func TestHandlerCreateLink(t *testing.T) {
 		{
 			name: "service storage error",
 			body: `{"url":"https://example.com"}`,
-			service: &testLinkService{
-				createLinkFunc: func(_ context.Context, _ string) (string, error) {
-					return "", xerrors.ErrStorageUnavailable
-				},
+			prepare: func(mockService *mockhttp.MocklinkService) {
+				mockService.EXPECT().
+					CreateLink(gomock.Any(), testOriginalURL).
+					Return("", xerrors.ErrStorageUnavailable)
 			},
 			wantStatus:    http.StatusServiceUnavailable,
 			wantErrorCode: "storage_unavailable",
@@ -115,51 +96,30 @@ func TestHandlerCreateLink(t *testing.T) {
 
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-
-			var gotServiceURL string
-			if tc.service.createLinkFunc == nil {
-				tc.service.createLinkFunc = func(_ context.Context, originalURL string) (string, error) {
-					gotServiceURL = originalURL
-					return testShortCode, nil
-				}
+			ctrl := gomock.NewController(t)
+			mockService := mockhttp.NewMocklinkService(ctrl)
+			if tc.prepare != nil {
+				tc.prepare(mockService)
 			}
 
-			handler := newTestHandler(tc.service)
-
-			req := httptest.NewRequest(
-				http.MethodPost,
-				"/api/v1/links",
-				bytes.NewBufferString(tc.body),
-			)
+			handler := newTestHandler(mockService)
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/links", bytes.NewBufferString(tc.body))
 			rec := httptest.NewRecorder()
 
 			handler.Router().ServeHTTP(rec, req)
 
-			if rec.Code != tc.wantStatus {
-				t.Fatalf("expected status %d, got %d, body: %s", tc.wantStatus, rec.Code, rec.Body.String())
-			}
+			require.Equal(t, tc.wantStatus, rec.Code, "body: %s", rec.Body.String())
 
 			if tc.wantErrorCode != "" {
 				var response errorResponse
 				decodeResponse(t, rec, &response)
-
-				if response.Error.Code != tc.wantErrorCode {
-					t.Fatalf("expected error code %q, got %q", tc.wantErrorCode, response.Error.Code)
-				}
-
+				assert.Equal(t, tc.wantErrorCode, response.Error.Code)
 				return
 			}
 
 			var response createLinkResponse
 			decodeResponse(t, rec, &response)
-
-			if response.ShortURL != tc.wantShortURL {
-				t.Fatalf("expected short url %q, got %q", tc.wantShortURL, response.ShortURL)
-			}
-
-			if tc.wantServiceURL != "" && gotServiceURL != tc.wantServiceURL {
-				t.Fatalf("expected service url %q, got %q", tc.wantServiceURL, gotServiceURL)
-			}
+			assert.Equal(t, tc.wantShortURL, response.ShortURL)
 		})
 	}
 }
@@ -170,25 +130,29 @@ func TestHandlerResolveLink(t *testing.T) {
 	tests := []struct {
 		name          string
 		code          string
-		service       *testLinkService
+		prepare       func(mockService *mockhttp.MocklinkService)
 		wantStatus    int
 		wantURL       string
 		wantErrorCode string
 	}{
 		{
-			name:       "success",
-			code:       testShortCode,
-			service:    &testLinkService{},
+			name: "success",
+			code: testShortCode,
+			prepare: func(mockService *mockhttp.MocklinkService) {
+				mockService.EXPECT().
+					ResolveLink(gomock.Any(), testShortCode).
+					Return(testOriginalURL, nil)
+			},
 			wantStatus: http.StatusOK,
 			wantURL:    testOriginalURL,
 		},
 		{
 			name: "not found",
 			code: testShortCode,
-			service: &testLinkService{
-				resolveLinkFunc: func(_ context.Context, _ string) (string, error) {
-					return "", xerrors.ErrNotFound
-				},
+			prepare: func(mockService *mockhttp.MocklinkService) {
+				mockService.EXPECT().
+					ResolveLink(gomock.Any(), testShortCode).
+					Return("", xerrors.ErrNotFound)
 			},
 			wantStatus:    http.StatusNotFound,
 			wantErrorCode: "not_found",
@@ -196,10 +160,10 @@ func TestHandlerResolveLink(t *testing.T) {
 		{
 			name: "invalid short code",
 			code: "bad",
-			service: &testLinkService{
-				resolveLinkFunc: func(_ context.Context, _ string) (string, error) {
-					return "", xerrors.ErrInvalidShortCode
-				},
+			prepare: func(mockService *mockhttp.MocklinkService) {
+				mockService.EXPECT().
+					ResolveLink(gomock.Any(), "bad").
+					Return("", xerrors.ErrInvalidShortCode)
 			},
 			wantStatus:    http.StatusBadRequest,
 			wantErrorCode: "invalid_short_code",
@@ -207,10 +171,10 @@ func TestHandlerResolveLink(t *testing.T) {
 		{
 			name: "storage unavailable",
 			code: testShortCode,
-			service: &testLinkService{
-				resolveLinkFunc: func(_ context.Context, _ string) (string, error) {
-					return "", xerrors.ErrStorageUnavailable
-				},
+			prepare: func(mockService *mockhttp.MocklinkService) {
+				mockService.EXPECT().
+					ResolveLink(gomock.Any(), testShortCode).
+					Return("", xerrors.ErrStorageUnavailable)
 			},
 			wantStatus:    http.StatusServiceUnavailable,
 			wantErrorCode: "storage_unavailable",
@@ -219,38 +183,31 @@ func TestHandlerResolveLink(t *testing.T) {
 
 	for _, tc := range tests {
 		tc := tc
-
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
+			ctrl := gomock.NewController(t)
+			mockService := mockhttp.NewMocklinkService(ctrl)
+			if tc.prepare != nil {
+				tc.prepare(mockService)
+			}
 
-			handler := newTestHandler(tc.service)
-
+			handler := newTestHandler(mockService)
 			req := httptest.NewRequest(http.MethodGet, "/api/v1/links/"+tc.code, nil)
 			rec := httptest.NewRecorder()
 
 			handler.Router().ServeHTTP(rec, req)
-
-			if rec.Code != tc.wantStatus {
-				t.Fatalf("expected status %d, got %d, body: %s", tc.wantStatus, rec.Code, rec.Body.String())
-			}
+			require.Equal(t, tc.wantStatus, rec.Code, "body: %s", rec.Body.String())
 
 			if tc.wantErrorCode != "" {
 				var response errorResponse
 				decodeResponse(t, rec, &response)
-
-				if response.Error.Code != tc.wantErrorCode {
-					t.Fatalf("expected error code %q, got %q", tc.wantErrorCode, response.Error.Code)
-				}
-
+				assert.Equal(t, tc.wantErrorCode, response.Error.Code)
 				return
 			}
 
 			var response resolveLinkResponse
 			decodeResponse(t, rec, &response)
-
-			if response.OriginalURL != tc.wantURL {
-				t.Fatalf("expected original url %q, got %q", tc.wantURL, response.OriginalURL)
-			}
+			assert.Equal(t, tc.wantURL, response.OriginalURL)
 		})
 	}
 }
@@ -261,37 +218,39 @@ func TestHandlerRedirect(t *testing.T) {
 	tests := []struct {
 		name          string
 		path          string
-		service       *testLinkService
+		prepare       func(mockService *mockhttp.MocklinkService)
 		wantStatus    int
 		wantLocation  string
 		wantErrorCode string
 	}{
 		{
-			name:         "success",
-			path:         "/" + testShortCode,
-			service:      &testLinkService{},
+			name: "success",
+			path: "/" + testShortCode,
+			prepare: func(mockService *mockhttp.MocklinkService) {
+				mockService.EXPECT().
+					ResolveLink(gomock.Any(), testShortCode).
+					Return(testOriginalURL, nil)
+			},
 			wantStatus:   http.StatusFound,
 			wantLocation: testOriginalURL,
 		},
 		{
 			name:       "root is not found",
 			path:       "/",
-			service:    &testLinkService{},
 			wantStatus: http.StatusNotFound,
 		},
 		{
 			name:       "api path is not redirected",
 			path:       "/api/something",
-			service:    &testLinkService{},
 			wantStatus: http.StatusNotFound,
 		},
 		{
 			name: "link not found",
 			path: "/" + testShortCode,
-			service: &testLinkService{
-				resolveLinkFunc: func(_ context.Context, _ string) (string, error) {
-					return "", xerrors.ErrNotFound
-				},
+			prepare: func(mockService *mockhttp.MocklinkService) {
+				mockService.EXPECT().
+					ResolveLink(gomock.Any(), testShortCode).
+					Return("", xerrors.ErrNotFound)
 			},
 			wantStatus:    http.StatusNotFound,
 			wantErrorCode: "not_found",
@@ -303,32 +262,27 @@ func TestHandlerRedirect(t *testing.T) {
 
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
+			ctrl := gomock.NewController(t)
+			mockService := mockhttp.NewMocklinkService(ctrl)
+			if tc.prepare != nil {
+				tc.prepare(mockService)
+			}
 
-			handler := newTestHandler(tc.service)
-
+			handler := newTestHandler(mockService)
 			req := httptest.NewRequest(http.MethodGet, tc.path, nil)
 			rec := httptest.NewRecorder()
 
 			handler.Router().ServeHTTP(rec, req)
-
-			if rec.Code != tc.wantStatus {
-				t.Fatalf("expected status %d, got %d, body: %s", tc.wantStatus, rec.Code, rec.Body.String())
-			}
+			require.Equal(t, tc.wantStatus, rec.Code, "body: %s", rec.Body.String())
 
 			if tc.wantLocation != "" {
-				location := rec.Header().Get("Location")
-				if location != tc.wantLocation {
-					t.Fatalf("expected location %q, got %q", tc.wantLocation, location)
-				}
+				assert.Equal(t, tc.wantLocation, rec.Header().Get("Location"))
 			}
 
 			if tc.wantErrorCode != "" {
 				var response errorResponse
 				decodeResponse(t, rec, &response)
-
-				if response.Error.Code != tc.wantErrorCode {
-					t.Fatalf("expected error code %q, got %q", tc.wantErrorCode, response.Error.Code)
-				}
+				assert.Equal(t, tc.wantErrorCode, response.Error.Code)
 			}
 		})
 	}
@@ -336,29 +290,22 @@ func TestHandlerRedirect(t *testing.T) {
 
 func TestHandlerWriteJSON(t *testing.T) {
 	t.Parallel()
+	ctrl := gomock.NewController(t)
+	mockService := mockhttp.NewMocklinkService(ctrl)
 
-	handler := newTestHandler(&testLinkService{})
+	handler := newTestHandler(mockService)
 	rec := httptest.NewRecorder()
 
 	handler.writeJSON(rec, http.StatusCreated, createLinkResponse{
 		ShortURL: testBaseURL + "/" + testShortCode,
 	})
 
-	if rec.Code != http.StatusCreated {
-		t.Fatalf("expected status %d, got %d", http.StatusCreated, rec.Code)
-	}
-
-	contentType := rec.Header().Get("Content-Type")
-	if contentType != "application/json" {
-		t.Fatalf("expected content type %q, got %q", "application/json", contentType)
-	}
+	require.Equal(t, http.StatusCreated, rec.Code)
+	assert.Equal(t, "application/json", rec.Header().Get("Content-Type"))
 
 	var response createLinkResponse
 	decodeResponse(t, rec, &response)
-
-	if response.ShortURL != testBaseURL+"/"+testShortCode {
-		t.Fatalf("unexpected short url: %q", response.ShortURL)
-	}
+	assert.Equal(t, testBaseURL+"/"+testShortCode, response.ShortURL)
 }
 
 func TestCloseRequestBody(t *testing.T) {
@@ -366,7 +313,6 @@ func TestCloseRequestBody(t *testing.T) {
 
 	t.Run("nil body", func(t *testing.T) {
 		t.Parallel()
-
 		closeRequestBody(zap.NewNop(), nil)
 	})
 
@@ -410,7 +356,6 @@ func (c ioReadCloser) Close() error {
 func decodeResponse(t *testing.T, rec *httptest.ResponseRecorder, target any) {
 	t.Helper()
 
-	if err := json.NewDecoder(rec.Body).Decode(target); err != nil {
-		t.Fatalf("decode response body: %v, body: %s", err, rec.Body.String())
-	}
+	err := json.NewDecoder(rec.Body).Decode(target)
+	require.NoError(t, err, "body: %s", rec.Body.String())
 }

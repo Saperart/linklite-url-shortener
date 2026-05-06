@@ -11,6 +11,8 @@ import (
 	"go.uber.org/zap"
 )
 
+//go:generate go run github.com/golang/mock/mockgen@v1.6.0 -source=handler.go -destination=./mocks/mock_link_service.go -package=mocks
+
 type linkService interface {
 	CreateLink(ctx context.Context, originalURL string) (string, error)
 	ResolveLink(ctx context.Context, shortCode string) (string, error)

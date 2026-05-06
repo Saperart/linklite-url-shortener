@@ -48,8 +48,8 @@ tasks:
     silent: true
     cmds:
       - 'echo ""'
-      - 'echo "Frontend: http://localhost:5173"'
-      - 'echo "Backend:  http://localhost:${HTTP_PORT}"'
+      - 'echo "Frontend: http://127.0.0.1:5173"'
+      - 'echo "Backend:  http://127.0.0.1:${HTTP_PORT}"'
       - 'echo ""'
 
   frontend:install:
@@ -62,6 +62,17 @@ tasks:
     desc: Generate sqlc code
     cmds:
       - sqlc generate
+
+  mocks:
+    desc: Generate gomock mocks
+    cmds:
+      - go generate ./internal/usecase/link_service ./internal/controller/http
+
+  generate:
+    desc: Run all code generators
+    cmds:
+      - task sqlc
+      - task mocks
 
   test:
     desc: Run unit tests

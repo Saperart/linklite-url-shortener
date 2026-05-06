@@ -11,6 +11,8 @@ import (
 
 const maxGenerateCodeAttempts = 100
 
+//go:generate go run github.com/golang/mock/mockgen@v1.6.0 -source=link_service.go -destination=./mocks/mock_dependencies.go -package=mocks
+
 type LinkRepository interface {
 	GetByOriginalURL(ctx context.Context, originalURL string) (*entity.Link, error)
 	GetByShortCode(ctx context.Context, shortCode string) (*entity.Link, error)
